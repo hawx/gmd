@@ -1,0 +1,291 @@
+#!/usr/bin/env ruby
+#
+# Usage: 
+#   gmd <GEMNAME>              # create the gemspec
+#   gmd install [GEMSPEC]      # locally install the gem
+#   gmd spec [GEMSPEC]         # run specs, adding to $: as needed so you don't have to
+#   gmd release [GEMSPEC]      # run the release tasks
+#
+# Creates a new basic gemspec at GEMNAME.gemspec, based on git-config 
+# info. 
+#
+# Once this has been checked into a project, you can make use of the 
+# extra tasks provided by gemd.
+#
+require 'clive/output'
+
+abort "Need to supply an argument or command. Type 'gmd help' for help.".red unless ARGV[0]
+
+def spec_path
+  Dir['*.gemspec'][0]
+end
+
+def spec?
+  !!spec_path
+end
+
+def spec
+  if spec?
+    Gem::Specification.load(spec_path)
+  else
+    nay "No gemspec found, run `gmd <GEMNAME>` to generate"
+  end
+end
+
+def gem
+  "#{spec.name}-#{spec.version}.gem"
+end
+
+def fullname
+  `git config --get user.name`.chomp
+end
+
+def email
+  `git config --get user.email`.chomp
+end
+
+def gh_user
+  `git config --get github.user`.chomp
+end
+
+def name
+  ARGV[0]
+end
+
+# Stolen stuff from DataMapper::Inflector
+class String
+  def camelize
+    gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
+  end
+  
+  def underscore
+    gsub(/::/, '/')
+    .gsub(/([A-Z]+)([A-Z][a-z])/,'\1_\2')
+    .gsub(/([a-z\d])([A-Z])/,'\1_\2')
+    .tr('-', '_')
+    .downcase
+  end
+end
+
+
+def gemspec
+  <<SPEC
+# -*- encoding: utf-8 -*-
+require File.expand_path("../lib/#{name}/version", __FILE__)
+
+Gem::Specification.new do |s|
+  s.name         = "#{name}"
+  s.author       = "#{fullname}"
+  s.email        = "#{email}"
+  s.summary      = "A short summary of what it does."
+  s.homepage     = "http://github.com/#{@gh_user}/#{@name}"
+  s.version      = #{name.camelize}::VERSION
+  
+  s.description  = <<-DESC
+    A long form description. Nicely indented and wrapped at ~70 chars.
+    Here's a measuring line for you. (Don't keep this in when releasing.)
+    ----------------------------------------------------------------------
+  DESC
+  
+  # s.add_dependency 'some-gem', '~> X.X.X'
+  # s.add_development_dependency 'some-gem', '~> X.X.X'
+  
+  s.files        = %w(README.md Rakefile LICENSE)
+  s.files       += Dir["{bin,lib,man,test,spec}/**/*"] & `git ls-files`.split("\\n")
+  s.test_files   = Dir["{test,spec}/**/*"] & `git ls-files`.split("\\n")
+  s.executables  = %w(#{name})
+end
+SPEC
+end
+
+def rakefile
+  <<RAKE
+require 'rake/testtask'
+
+GEM_SPEC = eval(File.read('#{name}.gemspec'))
+
+Rake::TestTask.new(:test) do |t|
+  t.libs << 'lib' << 'test'
+  t.pattern = 'test/**/*_test.rb'
+  t.verbose = true
+end
+
+# require 'rspec/core/rake_task'
+# RSpec::Core::RakeTask.new(:test)
+
+task :man do
+  ENV['RONN_ORGANIZATION'] = "\#{spec.name} \#{spec.version}"
+  sh "ronn -5r -stoc man/*.ronn"
+end
+
+task :default => :test
+
+RAKE
+end
+
+
+def yay(str)
+  puts str.green
+end
+
+def nay(str)
+  abort str.red
+end
+
+def file?(path)
+  if File.exist?(path)
+    true
+  else
+    false
+  end
+end
+
+def write(path, str)
+  File.open(path, 'w') {|f| f.puts str }
+  yay "Wrote #{path}."
+end
+
+
+def write_gemspec
+  if file? "#{name}.gemspec"
+    nay "Gemspec already exists!"
+  else
+    write "#{name}.gemspec", gemspec
+  end
+end
+
+def write_rakefile
+  if file? "Rakefile"
+    nay "Rakefile already exists!"
+  else
+    write "Rakefile", rakefile
+  end
+end
+
+def run_tests
+  if file?('Rakefile')
+    `rake`
+  else
+    nay "Rakefile does not exist, generate with `gmd rakefile`"
+  end
+end
+
+def create_tag
+  if `git diff --cached`.empty?
+    if `git tag`.split("\n").include?("v#{spec.version}")
+      nay "Version #{spec.version} has already been tagged"
+    end
+    `git tag v#{spec.version}`
+    `git push origin --tags`
+    `git push origin master`
+  else
+    yay "Unstaged changes still waiting to be commited"
+  end
+end
+
+def build_gem
+  `gem build #{spec.name}.gemspec`
+  `mkdir -p pkg`
+  `mv #{gem} pkg/#{gem}`
+  yay "Gem built."
+end
+
+def install_gem
+  `gem install pkg/#{gem}`
+  yay "Gem successfully installed."
+end
+
+def push_gem
+  `gem push pkg/#{gem}`
+  yay "Gem successfully pushed to rubygems."
+end
+
+
+case ARGV[0]  
+  when 'help' 
+    str = "\n  Usage: gmd [command] [args] \n\n"
+    str << "    gmd <GEMNAME>  " << "Write a new GEMNAME.gemspec and Rakefile\n".grey
+    str << "    gmd test       " << "Run tests\n".grey
+    str << "    gmd install    " << "Locally install the gem\n".grey
+    str << "    gmd release    " << "Release the gem; this tests, tags, and pushes the gem.\n".grey
+    
+    puts str
+    
+  when 'info'
+  
+    str = "\n  " << spec.name << " (" << spec.version.to_s.underline << ")\n\n"
+    if spec.authors.size > 1
+      str << "  authors: ".grey << "#{spec.authors.join(', ')}\n"
+      str << "  email:   ".grey << spec.email.to_s << "\n"
+      str << "  web:     ".grey << spec.homepage << "\n"
+    else
+      str << "  author: ".grey << spec.author << "\n"
+      str << "  email:  ".grey << spec.email.to_s << "\n"
+      str << "  web:    ".grey << spec.homepage << "\n"
+    end
+    
+    str << "\n" << spec.description << "\n"
+    str << "  files:  ".grey << spec.files.size.to_s 
+    str << " of " << `ls -1 | wc -l | sed 's/^ *//;s/ *$//'`.chomp << "\n"
+    
+    puts str << "\n"
+    
+  when 'install'
+    build_gem
+    install_gem
+    
+  when 'test'
+    run_tests
+    
+  when 'release'
+    run_tests
+    
+    require 'highline/import'
+    ok = ask "OK to publish (y/n): "
+    exit if ok.strip != "y"
+    
+    tag = ask "Create tag for #{spec.name} v#{spec.version} (y/n): "
+    if tag.strip == "y"
+      create_tag
+    end
+    
+    build_gem
+    push_gem
+
+else
+  write_gemspec
+  write_rakefile
+end
+
+
+# A reference of the spec with defaults
+#
+#   author - String (optional)
+#   authors - Array[String] (optional)
+#   bindir - String (optional, default = "bin")
+#   date - Time (required, default = "Time.now")
+#   default_exectable - String (optional)
+#   add_dependency - (optional)
+#   add_development_dependency - (optional)
+#   description - String (optional)
+#   email - String/Array[String] (optional)
+#   executables - Array (optional)
+#   extensions - Array (optional)
+#   extra_rdoc_files - Array (optional)
+#   files - Array (optional)
+#   has_rdoc - Boolean (optional, default = false)
+#   homepage - String (optional)
+#   license - String (optional)
+#   name - String (required)
+#   platform - String (required, default = "Gem::Platform::Ruby")
+#   rdoc_options - Array (optional, default = [])
+#   require_paths - Array (required, default = ["lib"])
+#   required_ruby_version - Gem::Version::Requirement (optional, default = "> 0.0.0")
+#   requirements - Array (optional, default = [])
+#   rubyforge_project - String (optional)
+#   rubygems_version - String (do not set, done automatically!)
+#   specification_version - Integer (do not set, done automatically!)
+#   summary - String (required)
+#   test_files - Array (optional, default = [])
+#   version - String (required)
+#
