@@ -75,7 +75,7 @@ Gem::Specification.new do |s|
   # s.add_dependency 'some-gem', '~> X.X.X'
   # s.add_development_dependency 'some-gem', '~> X.X.X'
   
-  s.files        = %w(README.md Rakefile LICENSE)
+  s.files        = %w(README.md Rakefile LICENCE)
   s.files       += Dir["{bin,lib,man,test,spec}/**/*"] & `git ls-files`.split("\\n")
   s.test_files   = Dir["{test,spec}/**/*"] & `git ls-files`.split("\\n")
   s.executables  = %w(#{name})
