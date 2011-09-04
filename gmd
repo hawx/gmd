@@ -12,7 +12,6 @@
 # Once this has been checked into a project, you can make use of the 
 # extra tasks provided by gemd.
 #
-require 'clive/output'
 
 abort "Need to supply an argument or command. Type 'gmd help' for help.".red unless ARGV[0]
 
@@ -52,20 +51,6 @@ def name
   ARGV[0]
 end
 
-# Stolen stuff from DataMapper::Inflector
-class String
-  def camelize
-    gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
-  end
-  
-  def underscore
-    gsub(/::/, '/')
-    .gsub(/([A-Z]+)([A-Z][a-z])/,'\1_\2')
-    .gsub(/([a-z\d])([A-Z])/,'\1_\2')
-    .tr('-', '_')
-    .downcase
-  end
-end
 
 
 def gemspec
@@ -123,6 +108,22 @@ task :default => :test
 RAKE
 end
 
+## HELPERS
+
+# Stolen from DataMapper::Inflector
+class String
+  def camelize
+    gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
+  end
+  
+  def colour(code)
+    "#{code}#{self}\e[0m"
+  end
+  
+  def red;   colour "\e[31m";  end
+  def green; colour "\e[32m";  end
+  def grey;  colour "\e[90m";  end
+end
 
 def yay(str)
   puts str.green
@@ -145,6 +146,8 @@ def write(path, str)
   yay "Wrote #{path}."
 end
 
+
+## TASKS
 
 def write_gemspec
   if file? "#{name}.gemspec"
@@ -201,13 +204,15 @@ def push_gem
 end
 
 
+## DELEGATE
+
 case ARGV[0]  
   when 'help' 
     str = "\n  Usage: gmd [command] [args] \n\n"
-    str << "    gmd <GEMNAME>  " << "Write a new GEMNAME.gemspec and Rakefile\n".grey
-    str << "    gmd test       " << "Run tests\n".grey
-    str << "    gmd install    " << "Locally install the gem\n".grey
-    str << "    gmd release    " << "Release the gem; this tests, tags, and pushes the gem.\n".grey
+    str << "    gmd <GEMNAME>    " << "# Write a new GEMNAME.gemspec and Rakefile\n".grey
+    str << "    gmd test         " << "# Run tests\n".grey
+    str << "    gmd install      " << "# Locally install the gem\n".grey
+    str << "    gmd release      " << "# Release the gem; this tests, tags, and pushes the gem.\n".grey
     
     puts str
     
