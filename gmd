@@ -99,7 +99,7 @@ end
 # RSpec::Core::RakeTask.new(:test)
 
 task :man do
-  ENV['RONN_ORGANIZATION'] = "\#{spec.name} \#{spec.version}"
+  ENV['RONN_ORGANIZATION'] = "\#{GEM_SPEC.name} \#{GEM_SPEC.version}"
   sh "ronn -5r -stoc man/*.ronn"
 end
 
