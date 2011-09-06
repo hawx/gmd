@@ -1,10 +1,9 @@
 #!/usr/bin/env ruby
 #
-# Usage: 
+# Usage: gmd [command]
 #   gmd <GEMNAME>              # create the gemspec
-#   gmd install [GEMSPEC]      # locally install the gem
-#   gmd spec [GEMSPEC]         # run specs, adding to $: as needed so you don't have to
-#   gmd release [GEMSPEC]      # run the release tasks
+#   gmd install                # locally install the gem
+#   gmd release                # run the release tasks
 #
 # Creates a new basic gemspec at GEMNAME.gemspec, based on git-config 
 # info. 
@@ -12,6 +11,48 @@
 # Once this has been checked into a project, you can make use of the 
 # extra tasks provided by gemd.
 #
+
+## HELPERS
+
+# Stolen from DataMapper::Inflector
+class String
+  def camelize
+    gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
+  end
+  
+  def colour(code)
+    "\e[#{code}m#{self}\e[0m"
+  end
+  
+  def red;   colour 31;  end
+  def green; colour 32;  end
+  def amber; colour 91;  end
+  def grey;  colour 90;  end
+end
+
+def yay(str)
+  puts str.green
+end
+
+def nay(str)
+  abort str.red
+end
+
+def way(str)
+  warn str.amber
+end
+
+def file?(path)
+  File.exist?(path)
+end
+
+def write(path, str)
+  File.open(path, 'w') {|f| f.puts str }
+  yay "Wrote #{path}."
+end
+
+
+
 
 abort "Need to supply an argument or command. Type 'gmd help' for help.".red unless ARGV[0]
 
@@ -35,22 +76,13 @@ def gem
   "#{spec.name}-#{spec.version}.gem"
 end
 
-def fullname
-  `git config --get user.name`.chomp
-end
-
-def email
-  `git config --get user.email`.chomp
-end
-
-def gh_user
-  `git config --get github.user`.chomp
+def git_conf(opt)
+  `git config --get #{opt =~ /\./ ? opt : 'user.' + opt}`.chomp
 end
 
 def name
   ARGV[0]
 end
-
 
 
 def gemspec
@@ -60,10 +92,10 @@ require File.expand_path("../lib/#{name}/version", __FILE__)
 
 Gem::Specification.new do |s|
   s.name         = "#{name}"
-  s.author       = "#{fullname}"
-  s.email        = "#{email}"
+  s.author       = "#{git_conf 'name'}"
+  s.email        = "#{git_conf 'email'}"
   s.summary      = "A short summary of what it does."
-  s.homepage     = "http://github.com/#{@gh_user}/#{@name}"
+  s.homepage     = "http://github.com/#{git_conf 'github.user'}/#{name}"
   s.version      = #{name.camelize}::VERSION
   
   s.description  = <<-DESC
@@ -108,50 +140,14 @@ task :default => :test
 RAKE
 end
 
-## HELPERS
 
-# Stolen from DataMapper::Inflector
-class String
-  def camelize
-    gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
-  end
-  
-  def colour(code)
-    "#{code}#{self}\e[0m"
-  end
-  
-  def red;   colour "\e[31m";  end
-  def green; colour "\e[32m";  end
-  def grey;  colour "\e[90m";  end
-end
-
-def yay(str)
-  puts str.green
-end
-
-def nay(str)
-  abort str.red
-end
-
-def file?(path)
-  if File.exist?(path)
-    true
-  else
-    false
-  end
-end
-
-def write(path, str)
-  File.open(path, 'w') {|f| f.puts str }
-  yay "Wrote #{path}."
-end
 
 
 ## TASKS
 
 def write_gemspec
   if file? "#{name}.gemspec"
-    nay "Gemspec already exists!"
+    way "Gemspec already exists!"
   else
     write "#{name}.gemspec", gemspec
   end
@@ -159,7 +155,7 @@ end
 
 def write_rakefile
   if file? "Rakefile"
-    nay "Rakefile already exists!"
+    way "Rakefile already exists!"
   else
     write "Rakefile", rakefile
   end
@@ -169,7 +165,7 @@ def run_tests
   if file?('Rakefile')
     `rake`
   else
-    nay "Rakefile does not exist, generate with `gmd rakefile`"
+    nay "Rakefile does not exist, generate with `gmd <GEMNAME>`"
   end
 end
 
@@ -179,10 +175,9 @@ def create_tag
       nay "Version #{spec.version} has already been tagged"
     end
     `git tag v#{spec.version}`
-    `git push origin --tags`
-    `git push origin master`
+    `git push origin --all`
   else
-    yay "Unstaged changes still waiting to be commited"
+    nay "Unstaged changes still waiting to be commited"
   end
 end
 
@@ -207,12 +202,12 @@ end
 ## DELEGATE
 
 case ARGV[0]  
-  when 'help' 
-    str = "\n  Usage: gmd [command] [args] \n\n"
+  when 'help'
+    str = "\n  Usage: gmd [command] \n\n"
     str << "    gmd <GEMNAME>    " << "# Write a new GEMNAME.gemspec and Rakefile\n".grey
-    str << "    gmd test         " << "# Run tests\n".grey
     str << "    gmd install      " << "# Locally install the gem\n".grey
     str << "    gmd release      " << "# Release the gem; this tests, tags, and pushes the gem.\n".grey
+    str << "    gmd info         " << "# Show information on the gemspec\n".grey
     
     puts str
     
@@ -238,9 +233,6 @@ case ARGV[0]
   when 'install'
     build_gem
     install_gem
-    
-  when 'test'
-    run_tests
     
   when 'release'
     run_tests
