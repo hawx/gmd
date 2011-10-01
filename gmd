@@ -24,10 +24,11 @@ class String
     "\e[#{code}m#{self}\e[0m"
   end
   
-  def red;   colour 31;  end
-  def green; colour 32;  end
-  def amber; colour 91;  end
-  def grey;  colour 90;  end
+  def red;       colour 31;  end
+  def green;     colour 32;  end
+  def amber;     colour 91;  end
+  def grey;      colour 90;  end
+  def underline; colour 4; end
 end
 
 def yay(str)
@@ -56,17 +57,10 @@ end
 
 abort "Need to supply an argument or command. Type 'gmd help' for help.".red unless ARGV[0]
 
-def spec_path
-  Dir['*.gemspec'][0]
-end
-
-def spec?
-  !!spec_path
-end
-
 def spec
-  if spec?
-    Gem::Specification.load(spec_path)
+  path = Dir['*.gemspec'][0]
+  if path
+    Gem::Specification.load(path)
   else
     nay "No gemspec found, run `gmd <GEMNAME>` to generate"
   end
@@ -224,7 +218,7 @@ case ARGV[0]
       str << "  web:    ".grey << spec.homepage << "\n"
     end
     
-    str << "\n" << spec.description << "\n"
+    str << "\n" << spec.description << "\n\n"
     str << "  files:  ".grey << spec.files.size.to_s 
     str << " of " << `ls -1 | wc -l | sed 's/^ *//;s/ *$//'`.chomp << "\n"
     
@@ -255,34 +249,36 @@ else
 end
 
 
-# A reference of the spec with defaults
+# A reference of the spec
+#   (o = optional, ? = required, but sane default set, - = required, X = do not set)
 #
-#   author - String (optional)
-#   authors - Array[String] (optional)
-#   bindir - String (optional, default = "bin")
-#   date - Time (required, default = "Time.now")
-#   default_exectable - String (optional)
-#   add_dependency - (optional)
-#   add_development_dependency - (optional)
-#   description - String (optional)
-#   email - String/Array[String] (optional)
-#   executables - Array (optional)
-#   extensions - Array (optional)
-#   extra_rdoc_files - Array (optional)
-#   files - Array (optional)
-#   has_rdoc - Boolean (optional, default = false)
-#   homepage - String (optional)
-#   license - String (optional)
-#   name - String (required)
-#   platform - String (required, default = "Gem::Platform::Ruby")
-#   rdoc_options - Array (optional, default = [])
-#   require_paths - Array (required, default = ["lib"])
-#   required_ruby_version - Gem::Version::Requirement (optional, default = "> 0.0.0")
-#   requirements - Array (optional, default = [])
-#   rubyforge_project - String (optional)
-#   rubygems_version - String (do not set, done automatically!)
-#   specification_version - Integer (do not set, done automatically!)
-#   summary - String (required)
-#   test_files - Array (optional, default = [])
-#   version - String (required)
+#  - name                         String (required)
+#  - summary                      String (required)
+#  - version                      String (required)
+#  ? date                         Time (required, default = "Time.now")
+#  o author                       String (optional)
+#  o authors                      Array[String] (optional)
+#  o bindir                       String (optional, default = "bin")
+
+#  o default_exectable            String (optional)
+#  o add_dependency               (optional)
+#  o add_development_dependency   (optional)
+#  o description                  String (optional)
+#  o email                        String/Array[String] (optional)
+#  o executables                  Array (optional)
+#  o extensions                   Array (optional)
+#  o extra_rdoc_files             Array (optional)
+#  o files                        Array (optional)
+#  o has_rdoc                     Boolean (optional, default = false)
+#  o homepage                     String (optional)
+#  o license                      String (optional)
+#  ? platform                     String (required, default = "Gem::Platform::Ruby")
+#  o rdoc_options                 Array (optional, default = [])
+#  ? require_paths                Array (required, default = ["lib"])
+#  o required_ruby_version        Gem::Version::Requirement (optional, default = "> 0.0.0")
+#  o requirements                 Array (optional, default = [])
+#  o rubyforge_project            String (optional)
+#  X rubygems_version             String (do not set, done automatically!)
+#  X specification_version        Integer (do not set, done automatically!)
+#  o test_files                   Array (optional, default = [])
 #
