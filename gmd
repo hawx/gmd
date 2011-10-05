@@ -16,6 +16,8 @@
 
 # Stolen from DataMapper::Inflector
 class String
+
+  # some_string => SomeString
   def camelize
     gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
   end
@@ -52,10 +54,27 @@ def write(path, str)
   yay "Wrote #{path}."
 end
 
+# Run +commands+ with +vers+ of ruby specified. Uses rbenv!
+def run_for(vers, commands)
+  system "RBENV_VERSION='#{vers}' sh -c '#{commands.map {|i| "rbenv exec #{i}"}.join(' && ')}'"
+end
 
+# http://stackoverflow.com/questions/2108727/which-in-ruby-checking-if-program-exists-in-path-from-ruby
+def command?(command)
+  system "which #{ command} > /dev/null 2>&1"
+end
 
+# ask_to "Make sandwich", y: -> { make_sandwich }, n: -> { puts "Make it yourself" }
+def ask_to(question, opts={})
+  print question + "? [y/n]: "
+  ok = $stdin.gets.chomp
+  if ok == "y"
+    opts[:y].call if opts.has_key?(:yes)
+  else
+    opts[:n].call if opts.has_key?(:no)
+  end
+end
 
-abort "Need to supply an argument or command. Type 'gmd help' for help.".red unless ARGV[0]
 
 def spec
   path = Dir['*.gemspec'][0]
@@ -155,14 +174,29 @@ def write_rakefile
   end
 end
 
+# If `rbenv` is installed, runs `bunlde install && bundle exec rake` under 
+# each version. This means you must have a Gemfile with "gem 'rake'" in it.
+#
+# Otherwise it just runs `rake`.
+#
+# Both of these assume the default task runs all of the tests.
 def run_tests
   if file?('Rakefile')
-    `rake`
+    if command?('rbenv')
+      `rbenv versions --bare`.split("\n").each do |vers|
+        run_for vers, ['bundle install', 'bundle exec rake']
+      end
+
+    else
+      `rake`
+    end
+
   else
     nay "Rakefile does not exist, generate with `gmd <GEMNAME>`"
   end
 end
 
+# Tags the last commit with the version number obtained from the gemspec.
 def create_tag
   if `git diff --cached`.empty?
     if `git tag`.split("\n").include?("v#{spec.version}")
@@ -175,6 +209,7 @@ def create_tag
   end
 end
 
+# Builds the gem to 'pkg/'
 def build_gem
   `gem build #{spec.name}.gemspec`
   `mkdir -p pkg`
@@ -192,37 +227,65 @@ def push_gem
   yay "Gem successfully pushed to rubygems."
 end
 
+def help
+  str = <<EOS
+Usage: gmd [command]
+
+  gmd <name>        # Generates a new gemspec and Rakefile for a gem called <name>
+                    # The name should be given lower case with underscores, ie.
+                    # my_cool_gem, it is then assumed this is for a class called 
+                    # MyCoolGem.
+  
+  gmd info          # Show info on from the gemspec.
+  gmd install       # Builds then locally installs the gem.
+  gmd release       # Release the gem; runs tests, tags, and pushes gem and git.
+  gmd test          # Runs tests (by calling `rake`) for all installed rubies (if
+                    # rbenv installed, otherwise just calls `rake`)
+  gmd help          # Display this help message
+EOS
+
+  str.split("\n").map do |l|
+    a, b = l.split("#")
+    b ? a + "# #{b}".grey : a
+  end.join("\n")
+end
+
+def info
+  
+  str = <<EOS
+  
+  #{spec.name} (#{spec.version.to_s.underline})
+  
+  author: #{spec.authors.join(', ')}
+  email:  #{spec.email}
+  web:    #{spec.homepage}
+  
+#{spec.description}
+  dependencies: 
+#{spec.dependencies.map {|d| "    - #{d.name}, #{d.requirement}" }.join("\n")}
+
+  development dependencies: 
+#{spec.development_dependencies.map {|d| "    - #{d.name}, #{d.requirement}" }.join("\n")}
+EOS
+
+  str.split("\n").map do |l|
+    a, b, url = l.split(":")
+    b ? "#{a}:".grey + b + (url || '') : a
+  end.join("\n") + "\n\n"
+end
+
 
 ## DELEGATE
 
+
+abort "Need to supply an argument or command.".red + "\n" + help unless ARGV[0]
+
 case ARGV[0]  
   when 'help'
-    str = "\n  Usage: gmd [command] \n\n"
-    str << "    gmd <GEMNAME>    " << "# Write a new GEMNAME.gemspec and Rakefile\n".grey
-    str << "    gmd install      " << "# Locally install the gem\n".grey
-    str << "    gmd release      " << "# Release the gem; this tests, tags, and pushes the gem.\n".grey
-    str << "    gmd info         " << "# Show information on the gemspec\n".grey
-    
-    puts str
+    puts help
     
   when 'info'
-  
-    str = "\n  " << spec.name << " (" << spec.version.to_s.underline << ")\n\n"
-    if spec.authors.size > 1
-      str << "  authors: ".grey << "#{spec.authors.join(', ')}\n"
-      str << "  email:   ".grey << spec.email.to_s << "\n"
-      str << "  web:     ".grey << spec.homepage << "\n"
-    else
-      str << "  author: ".grey << spec.author << "\n"
-      str << "  email:  ".grey << spec.email.to_s << "\n"
-      str << "  web:    ".grey << spec.homepage << "\n"
-    end
-    
-    str << "\n" << spec.description << "\n\n"
-    str << "  files:  ".grey << spec.files.size.to_s 
-    str << " of " << `ls -1 | wc -l | sed 's/^ *//;s/ *$//'`.chomp << "\n"
-    
-    puts str << "\n"
+    puts info
     
   when 'install'
     build_gem
@@ -231,17 +294,14 @@ case ARGV[0]
   when 'release'
     run_tests
     
-    require 'highline/import'
-    ok = ask "OK to publish (y/n): "
-    exit if ok.strip != "y"
-    
-    tag = ask "Create tag for #{spec.name} v#{spec.version} (y/n): "
-    if tag.strip == "y"
-      create_tag
-    end
+    ask_to "OK to publish", :n => proc { exit }
+    ask_to "Create tag for #{spec.name} v#{spec.version}", :y => proc { create_tag }
     
     build_gem
     push_gem
+    
+  when 'test'
+    run_tests
 
 else
   write_gemspec
@@ -259,7 +319,6 @@ end
 #  o author                       String (optional)
 #  o authors                      Array[String] (optional)
 #  o bindir                       String (optional, default = "bin")
-
 #  o default_exectable            String (optional)
 #  o add_dependency               (optional)
 #  o add_development_dependency   (optional)
