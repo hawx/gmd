@@ -69,9 +69,9 @@ def ask_to(question, opts={})
   print question + "? [y/n]: "
   ok = $stdin.gets.chomp
   if ok == "y"
-    opts[:y].call if opts.has_key?(:yes)
+    opts[:y].call if opts.has_key?(:y)
   else
-    opts[:n].call if opts.has_key?(:no)
+    opts[:n].call if opts.has_key?(:n)
   end
 end
 
@@ -276,7 +276,6 @@ end
 
 
 ## DELEGATE
-
 
 abort "Need to supply an argument or command.".red + "\n" + help unless ARGV[0]
 
