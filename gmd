@@ -5,11 +5,11 @@
 #   gmd install                # locally install the gem
 #   gmd release                # run the release tasks
 #
-# Creates a new basic gemspec at GEMNAME.gemspec, based on git-config 
-# info. 
+# Creates a new basic gemspec at GEMNAME.gemspec, based on git-config
+# info.
 #
-# Once this has been checked into a project, you can make use of the 
-# extra tasks provided by gemd.
+# Once this has been checked into a project, you can make use of the
+# extra tasks provided by gmd.
 #
 
 ## HELPERS
@@ -21,11 +21,11 @@ class String
   def camelize
     gsub(/\/(.?)/) { "::#{$1.upcase}" }.gsub(/(?:^|_)(.)/) { $1.upcase }
   end
-  
+
   def colour(code)
     "\e[#{code}m#{self}\e[0m"
   end
-  
+
   def red;       colour 31;  end
   def green;     colour 32;  end
   def amber;     colour 91;  end
@@ -99,7 +99,7 @@ end
 
 
 def gemspec
-  <<SPEC
+  <<END_OF_SPEC
 # -*- encoding: utf-8 -*-
 require File.expand_path("../lib/#{name}/version", __FILE__)
 
@@ -110,26 +110,27 @@ Gem::Specification.new do |s|
   s.summary      = "A short summary of what it does."
   s.homepage     = "http://github.com/#{git_conf 'github.user'}/#{name}"
   s.version      = #{name.camelize}::VERSION
-  
+  s.license      = 'MIT'
+
   s.description  = <<-DESC
     A long form description. Nicely indented and wrapped at ~70 chars.
     Here's a measuring line for you. (Don't keep this in when releasing.)
     ----------------------------------------------------------------------
   DESC
-  
+
   # s.add_dependency 'some-gem', '~> X.X.X'
   # s.add_development_dependency 'some-gem', '~> X.X.X'
-  
+
   s.files        = %w(README.md Rakefile LICENCE)
   s.files       += Dir["{bin,lib,man,test,spec}/**/*"] & `git ls-files`.split("\\n")
   s.test_files   = Dir["{test,spec}/**/*"] & `git ls-files`.split("\\n")
   s.executables  = %w(#{name})
 end
-SPEC
+END_OF_SPEC
 end
 
 def rakefile
-  <<RAKE
+  <<END_OF_RAKE
 require 'rake/testtask'
 
 GEM_SPEC = eval(File.read('#{name}.gemspec'))
@@ -150,7 +151,31 @@ end
 
 task :default => :test
 
-RAKE
+END_OF_RAKE
+end
+
+def license
+  <<END_OF_LICENSE
+Copyright (c) #{Date.today.year} #{git_conf 'name'}
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+END_OF_LICENSE
 end
 
 
@@ -174,7 +199,15 @@ def write_rakefile
   end
 end
 
-# If `rbenv` is installed, runs `bunlde install && bundle exec rake` under 
+def write_license
+  if file? "LICENSE"
+    way "LICENSE already exists!"
+  else
+    write "LICENSE", license
+  end
+end
+
+# If `rbenv` is installed, runs `bunlde install && bundle exec rake` under
 # each version. This means you must have a Gemfile with "gem 'rake'" in it.
 #
 # Otherwise it just runs `rake`.
@@ -203,7 +236,8 @@ def create_tag
       nay "Version #{spec.version} has already been tagged"
     end
     `git tag v#{spec.version}`
-    `git push origin --all`
+    `git push --tags`
+    `git push`
   else
     nay "Unstaged changes still waiting to be commited"
   end
@@ -231,11 +265,11 @@ def help
   str = <<EOS
 Usage: gmd [command]
 
-  gmd <name>        # Generates a new gemspec and Rakefile for a gem called <name>
-                    # The name should be given lower case with underscores, ie.
-                    # my_cool_gem, it is then assumed this is for a class called 
-                    # MyCoolGem.
-  
+  gmd <name>        # Generates a new gemspec, LICENSE, and Rakefile for a gem
+                    # called <name>. The name should be given lower case with
+                    # underscores, ie.  my_cool_gem, it is then assumed this is
+                    # for a class called MyCoolGem.
+
   gmd info          # Show info on from the gemspec.
   gmd install       # Builds then locally installs the gem.
   gmd release       # Release the gem; runs tests, tags, and pushes gem and git.
@@ -250,28 +284,62 @@ EOS
   end.join("\n")
 end
 
-def info
-  
-  str = <<EOS
-  
-  #{spec.name} (#{spec.version.to_s.underline})
-  
-  author: #{spec.authors.join(', ')}
-  email:  #{spec.email}
-  web:    #{spec.homepage}
-  
-#{spec.description}
-  dependencies: 
-#{spec.dependencies.map {|d| "    - #{d.name}, #{d.requirement}" }.join("\n")}
+class InfoPrinter
+  Data = Struct.new(:key, :value)
 
-  development dependencies: 
-#{spec.development_dependencies.map {|d| "    - #{d.name}, #{d.requirement}" }.join("\n")}
+  def initialize(spec)
+    @spec = spec
+  end
+
+  def to_s
+    author = Data.new('author:', @spec.authors.join(', '))
+    email  = Data.new('email: ', @spec.email)
+    web    = Data.new('web:   ', @spec.homepage)
+
+    dependencies = Data.new('dependencies:', format_dependencies(@spec.dependencies))
+    dev_dependencies = Data.new('dependencies:', format_dependencies(@spec.development_dependencies))
+
+    sections = [author, email, web]
+    sections += [nil, dependencies] unless @spec.dependencies.empty?
+    sections += [nil, dev_dependencies] unless @spec.development_dependencies.empty?
+
+    sections = sections.map {|s|
+      s.nil? ? "" : section(s)
+    }
+
+    <<EOS
+
+#{header}
+
+#{sections.join("\n")}
+
 EOS
+  end
 
-  str.split("\n").map do |l|
-    a, b, url = l.split(":")
-    b ? "#{a}:".grey + b + (url || '') : a
-  end.join("\n") + "\n\n"
+  def format_dependencies(arr)
+    arr.map {|d| "#{d.name}, #{d.requirement}"}
+  end
+
+  def format_list(arr)
+    arr.map {|val| "    - #{val}"}
+  end
+
+  def header
+    "  #{spec.name} (#{spec.version.to_s.underline})"
+  end
+
+  def section(data)
+    case data.value
+    when String
+      "  #{data.key.grey} #{data.value}"
+    when Array
+      "  #{data.key.grey}\n#{format_list(data.value).join("\n")}"
+    end
+  end
+end
+
+def info
+  InfoPrinter.new(spec).to_s
 end
 
 
@@ -279,26 +347,26 @@ end
 
 abort "Need to supply an argument or command.".red + "\n" + help unless ARGV[0]
 
-case ARGV[0]  
+case ARGV[0]
   when 'help'
     puts help
-    
+
   when 'info'
     puts info
-    
+
   when 'install'
     build_gem
     install_gem
-    
+
   when 'release'
-    run_tests
-    
+    run_tests if file?('Rakefile')
+
     ask_to "OK to publish", :n => proc { exit }
     ask_to "Create tag for #{spec.name} v#{spec.version}", :y => proc { create_tag }
-    
+
     build_gem
     push_gem
-    
+
   when 'test'
     run_tests
 
